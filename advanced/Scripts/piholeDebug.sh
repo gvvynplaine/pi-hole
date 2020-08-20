@@ -396,34 +396,41 @@ check_critical_program_versions() {
 os_check() {
     # This function gets a list of supported OS versions from a TXT record at versions.pi-hole.net
     # and determines whether or not the script is running on one of those systems
-    local remote_os_domain valid_os valid_version detected_os detected_version
+    local remote_os_domain valid_os valid_version valid_response detected_os detected_version
     remote_os_domain="versions.pi-hole.net"
 
     detected_os=$(grep "\bID\b" /etc/os-release | cut -d '=' -f2 | tr -d '"')
     detected_version=$(grep VERSION_ID /etc/os-release | cut -d '=' -f2 | tr -d '"')
 
-    IFS=" " read -r -a supportedOS < <(dig +short -t txt ${remote_os_domain} @ns1.pi-hole.net | tr -d '"')
+    IFS=" " read -r -a supportedOS < <(dig +short -t txt ${remote_os_domain} @ns1.pi-hole.net || echo "" | tr -d '"')
 
-    for distro_and_versions in "${supportedOS[@]}"
-    do
-        distro_part="${distro_and_versions%%=*}"
-        versions_part="${distro_and_versions##*=}"
+    if [ ${#supportedOS[@]} -eq 0 ]; then
+            valid_response=false
+    else
+        for distro_and_versions in "${supportedOS[@]}"
+        do
+            distro_part="${distro_and_versions%%=*}"
+            versions_part="${distro_and_versions##*=}"
 
-        if [[ "${detected_os^^}" =~ ${distro_part^^} ]]; then
-            valid_os=true
-            IFS="," read -r -a supportedVer <<<"${versions_part}"
-            for version in "${supportedVer[@]}"
-            do
-                if [[ "${detected_version}" =~ $version ]]; then
-                    valid_version=true
-                    break
-                fi
-            done
-            break
-        fi
-    done
+            if [[ "${detected_os^^}" =~ ${distro_part^^} ]]; then
+                valid_os=true
+                IFS="," read -r -a supportedVer <<<"${versions_part}"
+                for version in "${supportedVer[@]}"
+                do
+                    if [[ "${detected_version}" =~ $version ]]; then
+                        valid_version=true
+                        break
+                    fi
+                done
+                break
+            fi
+        done
+    fi
 
     # Display findings back to the user
+    if [ "$valid_response" = false ]; then
+        log_write "${CROSS} ${COL_RED}Retrieval of supported OS list failed. Reason: Dig Failure${COL_NC}"
+    fi
     if [ "$valid_os" = true ]; then
         log_write "${TICK} Distro:  ${COL_GREEN}${detected_os^}${COL_NC}"
 
