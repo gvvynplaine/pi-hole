@@ -182,17 +182,16 @@ os_check() {
     if [ "$PIHOLE_SKIP_OS_CHECK" != true ]; then
         # This function gets a list of supported OS versions from a TXT record at versions.pi-hole.net
         # and determines whether or not the script is running on one of those systems
-        local remote_os_domain valid_os valid_version detected_os detected_version display_warning
+        local remote_os_domain valid_os valid_version valid_response detected_os detected_version display_warning
         remote_os_domain="versions.pi-hole.net"
 
         detected_os=$(grep "\bID\b" /etc/os-release | cut -d '=' -f2 | tr -d '"')
         detected_version=$(grep VERSION_ID /etc/os-release | cut -d '=' -f2 | tr -d '"')
 
-        IFS=" " read -r -a supportedOS < <(dig +short -t txt ${remote_os_domain} @ns1.pi-hole.net | tr -d '"')
+        IFS=" " read -r -a supportedOS < <(dig +short -t txt ${remote_os_domain} @ns1.pi-hole.net || echo "" | tr -d '"')
 
         if [ ${#supportedOS[@]} -eq 0 ]; then
-            printf "  %b %bRetrieval of supported OS failed. Please contact support. %b\\n" "${CROSS}" "${COL_LIGHT_RED}" "${COL_NC}"
-            exit 1
+            valid_response=false
         else
             for distro_and_versions in "${supportedOS[@]}"
             do
@@ -214,23 +213,33 @@ os_check() {
             done
         fi
 
-        if [ "$valid_os" = true ] && [ "$valid_version" = true ]; then
+        if [ "$valid_os" = true ] && [ "$valid_version" = true ] && [ ! "$valid_response" = false ]; then
             display_warning=false
         fi
 
         if [ "$display_warning" != false ]; then
-            printf "  %b %bUnsupported OS detected: %s %s%b\\n" "${CROSS}" "${COL_LIGHT_RED}" "${detected_os^}" "${detected_version}" "${COL_NC}"
-            printf "      https://docs.pi-hole.net/main/prerequesites/#supported-operating-systems\\n"
+            if [ "$valid_response" = false ]; then
+                printf "  %b %bRetrieval of supported OS list failed. Reason: dig failure. %b\\n" "${CROSS}" "${COL_LIGHT_RED}" "${COL_NC}"
+                printf "      %bUnable to determine if the OS (%s %s) is supported%b\\n" "${COL_LIGHT_RED}" "${detected_os^}" "${detected_version}" "${COL_NC}"
+            else
+                printf "  %b %bUnsupported OS detected: %s %s%b\\n" "${CROSS}" "${COL_LIGHT_RED}" "${detected_os^}" "${detected_version}" "${COL_NC}"
+            fi
+            printf "\\n"
+            printf "      %bhttps://docs.pi-hole.net/main/prerequesites/#supported-operating-systems%b\\n" "${COL_LIGHT_GREEN}" "${COL_NC}"
+            printf "\\n"
+            printf "      If you wish to attempt an install anyway, you can try one of the following commands to skip this check:\\n"
             printf "\\n"
             printf "      e.g: If you are seeing this message on a fresh install, you can run:\\n"
-            printf "             'curl -sSL https://install.pi-hole.net | PIHOLE_SKIP_OS_CHECK=true sudo -E bash'\\n"
+            printf "             %bcurl -sSL https://install.pi-hole.net | PIHOLE_SKIP_OS_CHECK=true sudo -E bash%b\\n" "${COL_LIGHT_GREEN}" "${COL_NC}"
             printf "\\n"
             printf "           If you are seeing this message after having run pihole -up:\\n"
-            printf "             'PIHOLE_SKIP_OS_CHECK=true sudo -E pihole -r'\\n"
+            printf "             %bPIHOLE_SKIP_OS_CHECK=true sudo -E pihole -r%b\\n" "${COL_LIGHT_GREEN}" "${COL_NC}"
             printf "           (In this case, your previous run of pihole -up will have already updated the local repository)\\n"
             printf "\\n"
+            printf "      It is possible that the installation will still fail at this stage due to an unsupported configuration.\\n"
             printf "      If that is the case, you can feel free to ask the community on Discourse with the %bCommunity Help%b category:\\n" "${COL_LIGHT_RED}" "${COL_NC}"
-            printf "      https://discourse.pi-hole.net/c/bugs-problems-issues/community-help/\\n"
+            printf "      %bhttps://discourse.pi-hole.net/c/bugs-problems-issues/community-help/%b\\n" "${COL_LIGHT_GREEN}" "${COL_NC}"
+            printf "\\n"
             exit 1
 
         else
